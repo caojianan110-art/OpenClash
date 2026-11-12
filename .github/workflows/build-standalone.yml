@@ -1,0 +1,62 @@
+name: Build XiangXiang Standalone Bundle
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-bundle:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [aarch64, x86_64]
+    steps:
+      - name: Prepare Bundle Files
+        run: |
+          mkdir -p bundle/ui dist
+          VERSION="1.0.0"
+          BUILD_NUM="${{ github.run_number }}"
+          FULL_VER="${VERSION}+${BUILD_NUM}"
+          echo "$FULL_VER" > bundle/version
+
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            CORE_ARCH="arm64"
+          else
+            CORE_ARCH="amd64"
+          fi
+          wget -qO /tmp/mihomo.gz "https://github.com{CORE_ARCH}-v1.19.1.gz"
+          gzip -d -c /tmp/mihomo.gz > bundle/mihomo
+          chmod 755 bundle/mihomo
+
+          wget -qO /tmp/ui.tgz "https://github.com" || true
+          [ -s /tmp/ui.tgz ] && tar -xzf /tmp/ui.tgz -C bundle/ui || true
+
+          cat << 'EOF' > bundle/xiangxiang.init
+          #!/bin/sh /etc/rc.common
+          START=99
+          USE_PROCD=1
+          start_service() {
+            mkdir -p /etc/xiangxiang
+            [ -f /etc/xiangxiang/config.yaml ] || cat << 'CFG' > /etc/xiangxiang/config.yaml
+          mixed-port: 7890
+          allow-lan: true
+          mode: rule
+          external-controller: 0.0.0.0:9090
+          external-ui: /usr/libexec/xiangxiang/ui
+          CFG
+            procd_open_instance
+            procd_set_param command /usr/libexec/xiangxiang/mihomo -d /etc/xiangxiang
+            procd_set_param respawn
+            procd_close_instance
+          }
+          EOF
+          chmod 755 bundle/xiangxiang.init
+
+          cd bundle
+          find . -type f ! -name "SHA256SUMS" -exec sha256sum {} + | sed 's|\./||' > SHA256SUMS
+          zip -r "../dist/XiangXiang-${VERSION}-linux-${{ matrix.arch }}.zip" .
+
+      - name: Upload Standalone Bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: XiangXiang-Standalone-${{ matrix.arch }}
+          path: dist/*.zip
