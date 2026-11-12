@@ -14,21 +14,24 @@ jobs:
         run: |
           find luci-app-openclash -type f \( -name "*.po" -o -name "*.json" -o -name "*.lua" \) -exec sed -i 's/msgstr "OpenClash"/msgstr "祥祥加速器"/g; s/"OpenClash"/"祥祥加速器"/g' {} +
 
-      - name: Build Full OpenWrt IPK
+      - name: Build Chinese OpenWrt IPK
         run: |
+          sudo apt-get update && sudo apt-get install -y gcc make git
+          git clone --depth=1 https://github.com /tmp/luci
+          gcc /tmp/luci/modules/luci-base/src/po2lmo.c -o /usr/local/bin/po2lmo
           mkdir -p ipk_build/data/usr/lib/lua/luci ipk_build/data/usr/lib/lua/luci/i18n ipk_build/control dist
           cp -r luci-app-openclash/root/* ipk_build/data/
           [ -d luci-app-openclash/luasrc ] && cp -r luci-app-openclash/luasrc/* ipk_build/data/usr/lib/lua/luci/
           [ -d luci-app-openclash/htdocs ] && cp -r luci-app-openclash/htdocs/* ipk_build/data/www/
-          sudo apt-get update && sudo apt-get install -y gettext
-          for po in luci-app-openclash/po/zh*/*.po; do
-            [ -f "$po" ] && msgfmt "$po" -o "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo" || true
-          done
+          PO_FILE=$(find luci-app-openclash/po -name "*.po" | grep -E "zh" | head -n 1)
+          echo "Compiling Chinese PO: $PO_FILE"
+          /usr/local/bin/po2lmo "$PO_FILE" "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo"
+          cp "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo" "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh_Hans.lmo"
           chmod +x ipk_build/data/etc/init.d/* ipk_build/data/usr/share/openclash/*.sh 2>/dev/null || true
           SIZE=$(du -sb ipk_build/data | awk '{print $1}')
           cat << EOF > ipk_build/control/control
           Package: luci-app-openclash
-          Version: 0.48.003-xiangxiang
+          Version: 0.48.004-xiangxiang
           Depends: libc
           Section: luci
           Architecture: all
@@ -48,7 +51,7 @@ jobs:
           echo "2.0" > ipk_build/debian-binary
           tar --numeric-owner --owner=0 --group=0 -czf ipk_build/data.tar.gz -C ipk_build/data .
           tar --numeric-owner --owner=0 --group=0 -czf ipk_build/control.tar.gz -C ipk_build/control .
-          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.003-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
+          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.004-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
 
       - name: Upload Router Plugin
         uses: actions/upload-artifact@v4
