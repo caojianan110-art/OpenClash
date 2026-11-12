@@ -32,15 +32,14 @@ else
   apk add bash curl ca-bundle ip-full kmod-tun coreutils-nohup kmod-nft-tproxy >/dev/null 2>&1 || true
 fi
 
-# 3. 下载并安装你之前已经编译好的【祥祥加速器】网页控制面板
-echo ">>> [3/4] 正在安装【祥祥加速器】网页后台..."
-IPK_URL="https://ghfast.top"
-curl -fL --retry 3 -o /tmp/xiangxiang.ipk "$IPK_URL" || wget -qO /tmp/xiangxiang.ipk "$IPK_URL"
+# 3. 直接拉取最新官方完整中文插件并现场改名为【祥祥加速器】
+echo ">>> [3/4] 正在部署【祥祥加速器】网页后台..."
+PLUGIN_API="https://github.com"
+IPK_URL=$(curl -fsSL "$PLUGIN_API" | grep "browser_download_url" | grep "\.ipk" | head -n 1 | cut -d '"' -f 4)
+[ -z "$IPK_URL" ] && IPK_URL="https://github.com"
 
-if [ ! -s /tmp/xiangxiang.ipk ]; then
-  echo "[错误] 请先确保你已在 GitHub Releases (v1.0) 上传了 luci-app-openclash_0.48.006-xiangxiang_all.ipk"
-  exit 1
-fi
+curl -fL --retry 3 -o /tmp/xiangxiang.ipk "https://ghfast.top{IPK_URL}" || wget -qO /tmp/xiangxiang.ipk "https://ghfast.top{IPK_URL}"
+[ -s /tmp/xiangxiang.ipk ] || { echo "[错误] 插件下载失败，请检查路由器网络"; exit 1; }
 
 if [ "$MGR" = "opkg" ]; then
   opkg install --force-reinstall /tmp/xiangxiang.ipk
@@ -49,7 +48,10 @@ else
 fi
 rm -f /tmp/xiangxiang.ipk
 
-# 4. 从官方源自动拉取匹配当前架构的最新 Mihomo 内核
+# 现场将网页菜单与后台标题替换为“祥祥加速器”
+find /usr/lib/lua/luci /usr/share/luci -type f \( -name "*openclash*.lua" -o -name "*openclash*.json" \) -exec sed -i 's/"OpenClash"/"祥祥加速器"/g; s/OpenClash/祥祥加速器/g' {} + 2>/dev/null || true
+
+# 4. 自动拉取对应架构最新 Mihomo 内核
 echo ">>> [4/4] 正在安装 $CORE_ARCH 运行内核..."
 mkdir -p /etc/openclash/core
 CORE_API="https://github.com"
