@@ -14,29 +14,41 @@ jobs:
         run: |
           find luci-app-openclash -type f \( -name "*.po" -o -name "*.json" -o -name "*.lua" \) -exec sed -i 's/msgstr "OpenClash"/msgstr "祥祥加速器"/g; s/"OpenClash"/"祥祥加速器"/g' {} +
 
-      - name: Build Standard OpenWrt IPK
+      - name: Build Full OpenWrt IPK
         run: |
-          mkdir -p ipk_build/data ipk_build/control dist
+          mkdir -p ipk_build/data/usr/lib/lua/luci ipk_build/data/usr/lib/lua/luci/i18n ipk_build/control dist
           cp -r luci-app-openclash/root/* ipk_build/data/
-          mkdir -p ipk_build/data/usr/lib/lua/luci/i18n
+          [ -d luci-app-openclash/luasrc ] && cp -r luci-app-openclash/luasrc/* ipk_build/data/usr/lib/lua/luci/
+          [ -d luci-app-openclash/htdocs ] && cp -r luci-app-openclash/htdocs/* ipk_build/data/www/
           sudo apt-get update && sudo apt-get install -y gettext
           for po in luci-app-openclash/po/zh*/*.po; do
             [ -f "$po" ] && msgfmt "$po" -o "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo" || true
           done
+          chmod +x ipk_build/data/etc/init.d/* ipk_build/data/usr/share/openclash/*.sh 2>/dev/null || true
           SIZE=$(du -sb ipk_build/data | awk '{print $1}')
           cat << EOF > ipk_build/control/control
           Package: luci-app-openclash
-          Version: 0.48.002-xiangxiang
+          Version: 0.48.003-xiangxiang
           Depends: libc
           Section: luci
           Architecture: all
           Installed-Size: ${SIZE}
           Description: XiangXiang Accelerator LuCI Plugin
           EOF
+          cat << 'EOF' > ipk_build/control/postinst
+          #!/bin/sh
+          [ -n "${IPKG_INSTROOT}" ] || {
+            rm -rf /tmp/luci-indexcache /tmp/luci-modulecache/
+            /etc/init.d/rpcd restart >/dev/null 2>&1
+            /etc/init.d/uhttpd restart >/dev/null 2>&1
+          }
+          exit 0
+          EOF
+          chmod 755 ipk_build/control/postinst
           echo "2.0" > ipk_build/debian-binary
           tar --numeric-owner --owner=0 --group=0 -czf ipk_build/data.tar.gz -C ipk_build/data .
           tar --numeric-owner --owner=0 --group=0 -czf ipk_build/control.tar.gz -C ipk_build/control .
-          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.002-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
+          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.003-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
 
       - name: Upload Router Plugin
         uses: actions/upload-artifact@v4
