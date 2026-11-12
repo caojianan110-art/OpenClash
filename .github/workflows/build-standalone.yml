@@ -15,23 +15,24 @@ jobs:
           mkdir -p bundle/ui dist
           VERSION="1.0.0"
           BUILD_NUM="${{ github.run_number }}"
-          FULL_VER="${VERSION}+${BUILD_NUM}"
-          echo "$FULL_VER" > bundle/version
+          echo "${VERSION}+${BUILD_NUM}" > bundle/version
 
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            CORE_ARCH="arm64"
+            PATTERN="mihomo-linux-arm64-v1.*\.gz$"
           else
-            CORE_ARCH="amd64"
+            PATTERN="mihomo-linux-amd64-v1.*\.gz$"
           fi
 
-          LATEST_TAG=$(curl -fsSL https://github.com | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "Downloading Mihomo ${LATEST_TAG} for ${CORE_ARCH}..."
-          curl -fL --retry 3 -o /tmp/mihomo.gz "https://github.com{LATEST_TAG}/mihomo-linux-${CORE_ARCH}-${LATEST_TAG}.gz"
+          CORE_URL=$(curl -fsSL https://github.com | jq -r ".assets[] | select(.name | test(\"${PATTERN}\")) | .browser_download_url" | head -n 1)
+          echo "Real Core URL: $CORE_URL"
+          curl -fL --retry 3 -o /tmp/mihomo.gz "$CORE_URL"
           gzip -d -c /tmp/mihomo.gz > bundle/mihomo
           chmod 755 bundle/mihomo
 
-          curl -fL --retry 3 -o /tmp/ui.tgz "https://github.com" || true
-          [ -s /tmp/ui.tgz ] && tar -xzf /tmp/ui.tgz -C bundle/ui || true
+          UI_URL=$(curl -fsSL https://github.com | jq -r '.assets[] | select(.name == "dist.tgz") | .browser_download_url' | head -n 1)
+          if [ -n "$UI_URL" ]; then
+            curl -fL --retry 3 -o /tmp/ui.tgz "$UI_URL" && tar -xzf /tmp/ui.tgz -C bundle/ui || true
+          fi
 
           cat << 'EOF' > bundle/xiangxiang.init
           #!/bin/sh /etc/rc.common
