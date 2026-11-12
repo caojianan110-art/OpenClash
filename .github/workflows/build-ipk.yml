@@ -14,14 +14,14 @@ jobs:
         run: |
           find luci-app-openclash -type f \( -name "*.po" -o -name "*.json" -o -name "*.lua" \) -exec sed -i 's/msgstr "OpenClash"/msgstr "祥祥加速器"/g; s/"OpenClash"/"祥祥加速器"/g' {} +
 
-      - name: Build Chinese OpenWrt IPK
+      - name: Build Full Chinese OpenWrt IPK
         run: |
           mkdir -p ipk_build/data/usr/lib/lua/luci ipk_build/data/usr/lib/lua/luci/i18n ipk_build/control dist
           cp -r luci-app-openclash/root/* ipk_build/data/
           [ -d luci-app-openclash/luasrc ] && cp -r luci-app-openclash/luasrc/* ipk_build/data/usr/lib/lua/luci/
           [ -d luci-app-openclash/htdocs ] && cp -r luci-app-openclash/htdocs/* ipk_build/data/www/
           cat << 'PYEOF' > /tmp/po2lmo.py
-          import sys, struct, re
+          import sys, struct, ast
           def sfh(data):
               l = len(data)
               if l == 0: return 0
@@ -55,24 +55,35 @@ jobs:
               h = (h ^ (h << 25)) & 0xFFFFFFFF
               h = (h + (h >> 6)) & 0xFFFFFFFF
               return h
-          content = open(sys.argv[1], 'r', encoding='utf-8').read()
           entries = []
-          for block in content.split('\n\n'):
-              if 'msgid "' in block and 'msgstr "' in block:
-                  m_id = ''.join(re.findall(r'^msgid "(.*)"$', block, re.M) + re.findall(r'^"(.*)"$', block.split('msgstr')[0], re.M))
-                  m_str = ''.join(re.findall(r'^msgstr "(.*)"$', block, re.M) + re.findall(r'^"(.*)"$', block.split('msgstr')[1], re.M))
-                  m_id = m_id.replace('\\n', '\n').replace('\\"', '"').encode('utf-8')
-                  m_str = m_str.replace('\\n', '\n').replace('\\"', '"').encode('utf-8')
-                  if m_id and m_str:
-                      entries.append((sfh(m_id), sfh(m_str), m_str))
+          cur_id, cur_str, mode = [], [], None
+          def flush():
+              if cur_id and cur_str:
+                  k = ''.join(cur_id).encode('utf-8')
+                  v = ''.join(cur_str).encode('utf-8')
+                  if k and v:
+                      entries.append((sfh(k), sfh(v), v))
+          for raw in open(sys.argv[1], 'r', encoding='utf-8'):
+              line = raw.strip()
+              if not line or line.startswith('#'):
+                  flush()
+                  cur_id, cur_str, mode = [], [], None
+              elif line.startswith('msgid '):
+                  flush()
+                  cur_id, cur_str, mode = [ast.literal_eval(line[6:])], [], 'id'
+              elif line.startswith('msgstr '):
+                  cur_str, mode = [ast.literal_eval(line[7:])], 'str'
+              elif line.startswith('"') and mode == 'id':
+                  cur_id.append(ast.literal_eval(line))
+              elif line.startswith('"') and mode == 'str':
+                  cur_str.append(ast.literal_eval(line))
+          flush()
           entries.sort(key=lambda x: x[0])
-          out = bytearray()
-          idx = bytearray()
+          out, idx = bytearray(), bytearray()
           for k_id, v_id, val in entries:
               off = len(out)
               out.extend(val)
-              pad = (4 - (len(val) % 4)) % 4
-              out.extend(b'\x00' * pad)
+              out.extend(b'\x00' * ((4 - (len(val) % 4)) % 4))
               idx.extend(struct.pack('>IIII', k_id, v_id, off, len(val)))
           table_off = len(out)
           out.extend(idx)
@@ -86,7 +97,7 @@ jobs:
           SIZE=$(du -sb ipk_build/data | awk '{print $1}')
           cat << EOF > ipk_build/control/control
           Package: luci-app-openclash
-          Version: 0.48.005-xiangxiang
+          Version: 0.48.006-xiangxiang
           Depends: libc
           Section: luci
           Architecture: all
@@ -106,7 +117,7 @@ jobs:
           echo "2.0" > ipk_build/debian-binary
           tar --numeric-owner --owner=0 --group=0 -czf ipk_build/data.tar.gz -C ipk_build/data .
           tar --numeric-owner --owner=0 --group=0 -czf ipk_build/control.tar.gz -C ipk_build/control .
-          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.005-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
+          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.006-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
 
       - name: Upload Router Plugin
         uses: actions/upload-artifact@v4
