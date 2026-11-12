@@ -16,22 +16,77 @@ jobs:
 
       - name: Build Chinese OpenWrt IPK
         run: |
-          sudo apt-get update && sudo apt-get install -y gcc make git
-          git clone --depth=1 https://github.com /tmp/luci
-          gcc /tmp/luci/modules/luci-base/src/po2lmo.c -o /usr/local/bin/po2lmo
           mkdir -p ipk_build/data/usr/lib/lua/luci ipk_build/data/usr/lib/lua/luci/i18n ipk_build/control dist
           cp -r luci-app-openclash/root/* ipk_build/data/
           [ -d luci-app-openclash/luasrc ] && cp -r luci-app-openclash/luasrc/* ipk_build/data/usr/lib/lua/luci/
           [ -d luci-app-openclash/htdocs ] && cp -r luci-app-openclash/htdocs/* ipk_build/data/www/
+          cat << 'PYEOF' > /tmp/po2lmo.py
+          import sys, struct, re
+          def sfh(data):
+              l = len(data)
+              if l == 0: return 0
+              h = l
+              rem = l & 3
+              l >>= 2
+              i = 0
+              for _ in range(l):
+                  h = (h + (data[i] | (data[i+1] << 8))) & 0xFFFFFFFF
+                  tmp = (((data[i+2] | (data[i+3] << 8)) << 11) ^ h) & 0xFFFFFFFF
+                  h = ((h << 16) ^ tmp) & 0xFFFFFFFF
+                  h = (h + (h >> 11)) & 0xFFFFFFFF
+                  i += 4
+              if rem == 3:
+                  h = (h + (data[i] | (data[i+1] << 8))) & 0xFFFFFFFF
+                  h = (h ^ (h << 16)) & 0xFFFFFFFF
+                  h = (h ^ (data[i+2] << 18)) & 0xFFFFFFFF
+                  h = (h + (h >> 11)) & 0xFFFFFFFF
+              elif rem == 2:
+                  h = (h + (data[i] | (data[i+1] << 8))) & 0xFFFFFFFF
+                  h = (h ^ (h << 11)) & 0xFFFFFFFF
+                  h = (h + (h >> 17)) & 0xFFFFFFFF
+              elif rem == 1:
+                  h = (h + data[i]) & 0xFFFFFFFF
+                  h = (h ^ (h << 10)) & 0xFFFFFFFF
+                  h = (h + (h >> 1)) & 0xFFFFFFFF
+              h = (h ^ (h << 3)) & 0xFFFFFFFF
+              h = (h + (h >> 5)) & 0xFFFFFFFF
+              h = (h ^ (h << 4)) & 0xFFFFFFFF
+              h = (h + (h >> 17)) & 0xFFFFFFFF
+              h = (h ^ (h << 25)) & 0xFFFFFFFF
+              h = (h + (h >> 6)) & 0xFFFFFFFF
+              return h
+          content = open(sys.argv[1], 'r', encoding='utf-8').read()
+          entries = []
+          for block in content.split('\n\n'):
+              if 'msgid "' in block and 'msgstr "' in block:
+                  m_id = ''.join(re.findall(r'^msgid "(.*)"$', block, re.M) + re.findall(r'^"(.*)"$', block.split('msgstr')[0], re.M))
+                  m_str = ''.join(re.findall(r'^msgstr "(.*)"$', block, re.M) + re.findall(r'^"(.*)"$', block.split('msgstr')[1], re.M))
+                  m_id = m_id.replace('\\n', '\n').replace('\\"', '"').encode('utf-8')
+                  m_str = m_str.replace('\\n', '\n').replace('\\"', '"').encode('utf-8')
+                  if m_id and m_str:
+                      entries.append((sfh(m_id), sfh(m_str), m_str))
+          entries.sort(key=lambda x: x[0])
+          out = bytearray()
+          idx = bytearray()
+          for k_id, v_id, val in entries:
+              off = len(out)
+              out.extend(val)
+              pad = (4 - (len(val) % 4)) % 4
+              out.extend(b'\x00' * pad)
+              idx.extend(struct.pack('>IIII', k_id, v_id, off, len(val)))
+          table_off = len(out)
+          out.extend(idx)
+          out.extend(struct.pack('>I', table_off))
+          open(sys.argv[2], 'wb').write(out)
+          PYEOF
           PO_FILE=$(find luci-app-openclash/po -name "*.po" | grep -E "zh" | head -n 1)
-          echo "Compiling Chinese PO: $PO_FILE"
-          /usr/local/bin/po2lmo "$PO_FILE" "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo"
+          python3 /tmp/po2lmo.py "$PO_FILE" "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo"
           cp "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo" "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh_Hans.lmo"
           chmod +x ipk_build/data/etc/init.d/* ipk_build/data/usr/share/openclash/*.sh 2>/dev/null || true
           SIZE=$(du -sb ipk_build/data | awk '{print $1}')
           cat << EOF > ipk_build/control/control
           Package: luci-app-openclash
-          Version: 0.48.004-xiangxiang
+          Version: 0.48.005-xiangxiang
           Depends: libc
           Section: luci
           Architecture: all
@@ -51,7 +106,7 @@ jobs:
           echo "2.0" > ipk_build/debian-binary
           tar --numeric-owner --owner=0 --group=0 -czf ipk_build/data.tar.gz -C ipk_build/data .
           tar --numeric-owner --owner=0 --group=0 -czf ipk_build/control.tar.gz -C ipk_build/control .
-          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.004-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
+          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.005-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
 
       - name: Upload Router Plugin
         uses: actions/upload-artifact@v4
