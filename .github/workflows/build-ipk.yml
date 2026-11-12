@@ -1,0 +1,36 @@
+name: Build XiangXiang OpenClash
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Rename to 祥祥加速器
+        run: |
+          sed -i 's/msgstr "OpenClash"/msgstr "祥祥加速器"/g' luci-app-openclash/po/zh-cn/openclash.po
+          sed -i 's/"OpenClash"/"祥祥加速器"/g' luci-app-openclash/root/usr/share/luci/menu.d/luci-app-openclash.json || true
+
+      - name: Build via OpenWrt SDK
+        run: |
+          sudo apt-get update && sudo apt-get install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc wget unzip python3
+          wget -q https://openwrt.org
+          tar -xf openwrt-sdk-*.tar.xz
+          SDK_DIR=$(ls -d openwrt-sdk-*)
+          cp -r luci-app-openclash "$SDK_DIR/package/"
+          cd "$SDK_DIR"
+          make defconfig
+          make package/luci-app-openclash/compile V=s
+          mkdir -p ../dist
+          find bin/ -name "luci-app-openclash*.ipk" -exec cp {} ../dist/ \;
+
+      - name: Upload Router Plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: XiangXiang-OpenClash-IPK
+          path: dist/*.ipk
+          if-no-files-found: error
