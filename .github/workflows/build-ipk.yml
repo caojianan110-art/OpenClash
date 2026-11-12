@@ -14,28 +14,29 @@ jobs:
         run: |
           find luci-app-openclash -type f \( -name "*.po" -o -name "*.json" -o -name "*.lua" \) -exec sed -i 's/msgstr "OpenClash"/msgstr "祥祥加速器"/g; s/"OpenClash"/"祥祥加速器"/g' {} +
 
-      - name: Build Standard IPK Package
+      - name: Build Standard OpenWrt IPK
         run: |
           mkdir -p ipk_build/data ipk_build/control dist
           cp -r luci-app-openclash/root/* ipk_build/data/
           mkdir -p ipk_build/data/usr/lib/lua/luci/i18n
-          sudo apt-get update && sudo apt-get install -y gettext binutils
+          sudo apt-get update && sudo apt-get install -y gettext
           for po in luci-app-openclash/po/zh*/*.po; do
             [ -f "$po" ] && msgfmt "$po" -o "ipk_build/data/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo" || true
           done
-          cat << 'EOF' > ipk_build/control/control
+          SIZE=$(du -sb ipk_build/data | awk '{print $1}')
+          cat << EOF > ipk_build/control/control
           Package: luci-app-openclash
           Version: 0.48.002-xiangxiang
-          Architecture: all
-          Maintainer: XiangXiang
+          Depends: libc
           Section: luci
-          Priority: optional
+          Architecture: all
+          Installed-Size: ${SIZE}
           Description: XiangXiang Accelerator LuCI Plugin
           EOF
           echo "2.0" > ipk_build/debian-binary
-          tar -czf ipk_build/data.tar.gz -C ipk_build/data .
-          tar -czf ipk_build/control.tar.gz -C ipk_build/control .
-          cd ipk_build && ar -r ../dist/luci-app-openclash_0.48.002-xiangxiang_all.ipk debian-binary control.tar.gz data.tar.gz
+          tar --numeric-owner --owner=0 --group=0 -czf ipk_build/data.tar.gz -C ipk_build/data .
+          tar --numeric-owner --owner=0 --group=0 -czf ipk_build/control.tar.gz -C ipk_build/control .
+          tar --numeric-owner --owner=0 --group=0 -czf dist/luci-app-openclash_0.48.002-xiangxiang_all.ipk -C ipk_build debian-binary control.tar.gz data.tar.gz
 
       - name: Upload Router Plugin
         uses: actions/upload-artifact@v4
